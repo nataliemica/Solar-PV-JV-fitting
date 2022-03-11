@@ -16,10 +16,10 @@ As seen above, the fitted curve is less square-shaped than the raw data - meanin
 
 The predicted parameters are as follows:
 
-![solar_characteristics]('chars.png')
+![solar_characteristics](chars.png)
 
 If I take a ratio of these values with the expected parameters from the heading of my datafile, (calculated/expected), I get the following values for the three devices:
 
-![solar_characteristics_ratios]('char_ratio.png')
+![solar_characteristics_ratios](char_ratio.png)
 
 This shows how the model over-predicted the Jsc, but under-predicted the FF and Voc. This led to the overall efficiency to be lower than the expected value. 
