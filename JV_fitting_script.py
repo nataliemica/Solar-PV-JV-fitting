@@ -30,13 +30,51 @@ JV = JV.drop('Pixel', axis=1)
 #define ideal diode equation
 J = lambda V, Jsc, A, Jd : Jd*(np.exp(A*V)-1)-Jsc
 
+#define linear equation for fitting resistances
+y = lambda x, m, b : m*x + b
+
 #fitting the first column
 my_fit, params = opt.curve_fit(J, JV.index.to_list(), JV['1'].values)
-fit1 = pd.DataFrame({'1':J(JV.index, my_fit[0], my_fit[1], my_fit[2])}, index=JV.index.to_list())
+fit1 = pd.DataFrame({'1':J(JV.index, my_fit[0], my_fit[1], my_fit[2])}, 
+                    index=JV.index.to_list())
 
+
+JSC = my_fit[0]
+VOC = 1/my_fit[1]*np.log(JSC/my_fit[2]+1)
+
+
+#fitting for Rs
+diff = np.abs(JV.index.to_list()-VOC)
+Vi = diff.argmin()-3
+Vf = diff.argmin()+3
+lin_fit, params = opt.curve_fit(y, 
+                               JV.index[Vi:Vf+1].to_list(),
+                               JV['1'][JV.index[Vi:Vf+1].to_list()].values)
+
+RS = 1/lin_fit[0]*10**3
+RS_DF = pd.DataFrame({'Rs_fit':y(JV.index[Vi:Vf+1],lin_fit[0],lin_fit[1])},
+                     index=JV.index[Vi:Vf+1].to_list())
+
+
+#fitting for Rsh
+diff = np.abs(JV.index.to_list())
+Vi = diff.argmin()-3
+Vf = diff.argmin()+3
+lin_fit, params = opt.curve_fit(y, 
+                               JV.index[Vi:Vf+1].to_list(),
+                               JV['1'][JV.index[Vi:Vf+1].to_list()].values)
+
+RSH = 1/lin_fit[0]*10**3
+RSH_DF = pd.DataFrame({'Rsh_fit':y(JV.index[Vi:Vf+1],lin_fit[0],lin_fit[1])},
+                     index=JV.index[Vi:Vf+1].to_list())
+
+
+#plotting all fits to see how it looks
 plt.figure(figsize=(8,6)).set_facecolor('white')
 plt.plot(JV['1'], 'o', label='raw data')
-plt.plot(fit1['1'], color='darkred', label='fit')
+plt.plot(fit1['1'], color='darkred', label='J-V fit')
+plt.plot(RS_DF, color='orange', label='Rs fit')
+plt.plot(RSH_DF, color='violet', label='Rsh fit')
 plt.xlabel('Voltage (V)', fontsize=15)
 plt.xticks(fontsize=12)
 plt.ylabel('Current Density (mA/cm2)', fontsize=15)
@@ -46,10 +84,13 @@ plt.legend(fontsize=12)
 plt.savefig('JVfit.png')
 plt.show()
 
+
 #set up characteristics dataframe
-chars_index = ['PCE (%)','Jsc (mA/cm2)','Voc (V)','FF (%)']
-chars = pd.DataFrame({'1':[0 for i in chars_index], '2':[0 for i in chars_index], '3':[0 for i in chars_index]}, 
+chars_index = ['PCE (%)','Jsc (mA/cm2)','Voc (V)','FF (%)','Rsh (Ohm cm2)','Rs (Ohm cm2)']
+chars = pd.DataFrame({'1':[0 for i in chars_index], '2':[0 for i in chars_index],
+                     '3':[0 for i in chars_index]}, 
                      index=chars_index)
+
 
 for col in JV.columns.to_list():
     #fit the JV data in one column
@@ -67,14 +108,33 @@ for col in JV.columns.to_list():
     FF = (VMPP*JMPP)/(VOC*JSC)*100
     PCE = FF*JSC*VOC/100
     
+    diff = np.abs(JV.index.to_list())
+    Vi = diff.argmin()-3
+    Vf = diff.argmin()+3
+    lin_fit, params = opt.curve_fit(y, 
+                                   JV.index[Vi:Vf+1].to_list(),
+                                   JV[col][JV.index[Vi:Vf+1].to_list()].values)
+    
+    RSH = 1/lin_fit[0]*10**3
+    
+    diff = np.abs(JV.index.to_list()-VOC)
+    Vi = diff.argmin()-3
+    Vf = diff.argmin()+3
+    lin_fit, params = opt.curve_fit(y, 
+                                   JV.index[Vi:Vf+1].to_list(),
+                                   JV[col][JV.index[Vi:Vf+1].to_list()].values)
+    
+    RS = 1/lin_fit[0]*10**3
+    
     #write the results to the appropriate column in the characteristics frame
-    chars[col] = [PCE,JSC,VOC,FF]
+    chars[col] = [PCE,JSC,VOC,FF,RSH,RS]
     
 dfi.export(chars,'chars.png')
 
+
 #taking a ratio of the fitted values to the expected values
-char_ratio = pd.DataFrame(chars.values/data[['1','2','3']].head()[1:5].values, 
-                         index=['PCE','Jsc','Voc','FF'],
+compare_DF = data[['1','2','3']][1:8].drop(6)
+char_ratio = pd.DataFrame(chars.values/compare_DF.values, 
+                         index=['PCE','Jsc','Voc','FF','Rsh','Rs'],
                          columns=['Pixel 1', 'Pixel 2', 'Piexl 3'])
 dfi.export(char_ratio,'char_ratio.png')
-char_ratio
