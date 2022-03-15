@@ -138,3 +138,88 @@ char_ratio = pd.DataFrame(chars.values/compare_DF.values,
                          index=['PCE','Jsc','Voc','FF','Rsh','Rs'],
                          columns=['Pixel 1', 'Pixel 2', 'Piexl 3'])
 dfi.export(char_ratio,'char_ratio.png')
+
+
+#~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#different fitting process - using MPP and only linear fits
+
+power = JV['1']*JV.index
+Vi_l1 = JV.index[JV.index < 0][-2]
+Vf_l1 = JV.index[JV.index < JV.index[power.argmin()]][-4]
+lin1_fit, params = opt.curve_fit(y,
+                        JV[Vi_l1:Vf_l1].index,
+                        JV['1'][Vi_l1:Vf_l1].values)
+
+JSC = lin1_fit[1]
+RSH = 1/lin1_fit[0]*10**3
+
+line1 = pd.DataFrame({'line1':y(JV[Vi_l1:Vf_l1].index, lin1_fit[0], lin1_fit[1])}, index=JV[Vi_l1:Vf_l1].index)
+
+Vi_l2 = JV.index[JV.index > JV.index[power.argmin()]][4]
+Vf_l2 = JV['1'][JV['1']>0].index[2]
+lin2_fit, params = opt.curve_fit(y,
+                        JV[Vi_l2:Vf_l2].index,
+                        JV['1'][Vi_l2:Vf_l2].values)
+
+VOC = -lin2_fit[1]/lin2_fit[0]
+RS = 1/lin2_fit[0]*10**3
+
+line2 = pd.DataFrame({'line2':y(JV[Vi_l2:Vf_l2].index, lin2_fit[0], lin2_fit[1])}, index=JV[Vi_l2:Vf_l2].index)
+
+VMPP = JV.index[power.argmin()]
+JMPP = JV['1'][VMPP]
+
+FF = VMPP*JMPP/(VOC*JSC)*100
+PCE = FF*VOC*JSC/100
+
+plt.figure(figsize=(8,6)).set_facecolor('white')
+plt.plot(JV['1'], 'o', label='raw data')
+plt.plot(VMPP, JMPP, '*', color='violet', ms=12, label='MPP')
+plt.plot(line1, color='orange', label='line1')
+plt.plot(line2, color='red', label='line2')
+plt.xlabel('Voltage (V)', fontsize=15)
+plt.xticks(fontsize=12)
+plt.ylabel('Current Density (mA/cm2)', fontsize=15)
+plt.yticks(fontsize=12)
+plt.grid(axis='both')
+plt.legend(fontsize=12)
+plt.savefig('JVfit_linear.png')
+plt.show()
+
+chars_2 = pd.DataFrame({'1':[0 for i in chars_index], '2':[0 for i in chars_index], '3':[0 for i in chars_index]}, 
+                     index=chars_index)
+
+for col in JV.columns.to_list():
+    power = JV[col]*JV.index
+    
+    Vi_l1 = JV.index[JV.index < 0][-2]
+    Vf_l1 = JV.index[JV.index < JV.index[power.argmin()]][-4]
+    lin1_fit, params = opt.curve_fit(y,
+                            JV[Vi_l1:Vf_l1].index,
+                            JV[col][Vi_l1:Vf_l1].values)
+    JSC = -lin1_fit[1]
+    RSH = 1/lin1_fit[0]*10**3
+    
+    Vi_l2 = JV.index[JV.index > JV.index[power.argmin()]][4]
+    Vf_l2 = JV[col][JV[col]>0].index[2]
+    lin2_fit, params = opt.curve_fit(y,
+                            JV[Vi_l2:Vf_l2].index,
+                            JV[col][Vi_l2:Vf_l2].values)
+    VOC = -lin2_fit[1]/lin2_fit[0]
+    RS = 1/lin2_fit[0]*10**3
+    
+    VMPP = JV.index[power.argmin()]
+    JMPP = -JV[col][VMPP]
+    
+    FF = VMPP*JMPP/(VOC*JSC)*100
+    PCE = FF*VOC*JSC/100
+    
+    chars_2[col] = [PCE,JSC,VOC,FF,RSH,RS]
+    
+dfi.export(chars_2, 'chars_linear.png')
+
+char_ratio_2 = pd.DataFrame(chars_2.values/compare_DF.values, 
+                         index=['PCE','Jsc','Voc','FF','Rsh','Rs'],
+                         columns=['Pixel 1', 'Pixel 2', 'Piexl 3'])
+
+dfi.export(char_ratio_2, 'char_ratio_linear.png')
