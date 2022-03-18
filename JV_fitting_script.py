@@ -68,7 +68,6 @@ RSH = 1/lin_fit[0]*10**3
 RSH_DF = pd.DataFrame({'Rsh_fit':y(JV.index[Vi:Vf+1],lin_fit[0],lin_fit[1])},
                      index=JV.index[Vi:Vf+1].to_list())
 
-
 #plotting all fits to see how it looks
 plt.figure(figsize=(8,6)).set_facecolor('white')
 plt.plot(JV['1'], 'o', label='raw data')
@@ -84,57 +83,60 @@ plt.legend(fontsize=12)
 plt.savefig('JVfit.png')
 plt.show()
 
+#creating a function to do this whole process for each pixel in the JV dataframe
+def exp_est(JV):
+    J = lambda V, Jsc, A, Jd : Jd*(np.exp(A*V)-1)-Jsc
+    y = lambda x, m, b : m*x + b
+    #set up characteristics dataframe
+    chars_index = ['PCE (%)','Jsc (mA/cm2)','Voc (V)','FF (%)','Rsh (Ohm cm2)','Rs (Ohm cm2)']
+    chars = pd.DataFrame({'1':[0 for i in chars_index], '2':[0 for i in chars_index],
+                          '3':[0 for i in chars_index]}, 
+                         index=chars_index)
+    
+    for col in JV.columns.to_list():
+        #fit the JV data in one column
+        my_fit, params = opt.curve_fit(J, JV.index.to_list(), JV[col].values)
+        JSC = my_fit[0]
+        VOC = 1/my_fit[1]*np.log(JSC/my_fit[2]+1)    
+        
+        #find the power generated from the fitted equation
+        power_x = np.arange(0,VOC,0.01)
+        power = J(power_x, my_fit[0], my_fit[1], my_fit[2])*power_x
+        
+        VMPP = power_x[power.argmin()]
+        JMPP = np.abs(J(VMPP, my_fit[0], my_fit[1], my_fit[2]))
+        
+        FF = (VMPP*JMPP)/(VOC*JSC)*100
+        PCE = FF*JSC*VOC/100
+        
+        diff = np.abs(JV.index.to_list())
+        Vi = diff.argmin()-3
+        Vf = diff.argmin()+3
+        lin_fit, params = opt.curve_fit(y, 
+                                        JV.index[Vi:Vf+1].to_list(),
+                                        JV[col][JV.index[Vi:Vf+1].to_list()].values)
+        
+        RSH = 1/lin_fit[0]*10**3
+        
+        diff = np.abs(JV.index.to_list()-VOC)
+        Vi = diff.argmin()-3
+        Vf = diff.argmin()+3
+        lin_fit, params = opt.curve_fit(y, 
+                                        JV.index[Vi:Vf+1].to_list(),
+                                        JV[col][JV.index[Vi:Vf+1].to_list()].values)
+        
+        RS = 1/lin_fit[0]*10**3
+        
+        #write the results to the appropriate column in the characteristics frame
+        chars[col] = [PCE,JSC,VOC,FF,RSH,RS]
 
-#set up characteristics dataframe
-chars_index = ['PCE (%)','Jsc (mA/cm2)','Voc (V)','FF (%)','Rsh (Ohm cm2)','Rs (Ohm cm2)']
-chars = pd.DataFrame({'1':[0 for i in chars_index], '2':[0 for i in chars_index],
-                     '3':[0 for i in chars_index]}, 
-                     index=chars_index)
-
-
-for col in JV.columns.to_list():
-    #fit the JV data in one column
-    my_fit, params = opt.curve_fit(J, JV.index.to_list(), JV[col].values)
-    JSC = my_fit[0]
-    VOC = 1/my_fit[1]*np.log(JSC/my_fit[2]+1)    
+    return chars
     
-    #find the power generated from the fitted equation
-    power_x = np.arange(0,VOC,0.01)
-    power = J(power_x, my_fit[0], my_fit[1], my_fit[2])*power_x
-    
-    VMPP = power_x[power.argmin()]
-    JMPP = np.abs(J(VMPP, my_fit[0], my_fit[1], my_fit[2]))
-    
-    FF = (VMPP*JMPP)/(VOC*JSC)*100
-    PCE = FF*JSC*VOC/100
-    
-    diff = np.abs(JV.index.to_list())
-    Vi = diff.argmin()-3
-    Vf = diff.argmin()+3
-    lin_fit, params = opt.curve_fit(y, 
-                                   JV.index[Vi:Vf+1].to_list(),
-                                   JV[col][JV.index[Vi:Vf+1].to_list()].values)
-    
-    RSH = 1/lin_fit[0]*10**3
-    
-    diff = np.abs(JV.index.to_list()-VOC)
-    Vi = diff.argmin()-3
-    Vf = diff.argmin()+3
-    lin_fit, params = opt.curve_fit(y, 
-                                   JV.index[Vi:Vf+1].to_list(),
-                                   JV[col][JV.index[Vi:Vf+1].to_list()].values)
-    
-    RS = 1/lin_fit[0]*10**3
-    
-    #write the results to the appropriate column in the characteristics frame
-    chars[col] = [PCE,JSC,VOC,FF,RSH,RS]
-    
-dfi.export(chars,'chars.png')
-
+dfi.export(exp_est(JV),'chars.png')
 
 #taking a ratio of the fitted values to the expected values
 compare_DF = data[['1','2','3']][1:8].drop(6)
-char_ratio = pd.DataFrame(chars.values/compare_DF.values, 
+char_ratio = pd.DataFrame(exp_est(JV).values/compare_DF.values, 
                          index=['PCE','Jsc','Voc','FF','Rsh','Rs'],
                          columns=['Pixel 1', 'Pixel 2', 'Piexl 3'])
 dfi.export(char_ratio,'char_ratio.png')
@@ -186,39 +188,45 @@ plt.legend(fontsize=12)
 plt.savefig('JVfit_linear.png')
 plt.show()
 
-chars_2 = pd.DataFrame({'1':[0 for i in chars_index], '2':[0 for i in chars_index], '3':[0 for i in chars_index]}, 
-                     index=chars_index)
+def lin_est(JV):
+    y = lambda x, m, b : m*x + b
+    chars_index = ['PCE (%)','Jsc (mA/cm2)','Voc (V)','FF (%)','Rsh (Ohm cm2)','Rs (Ohm cm2)']
+    chars_2 = pd.DataFrame({'1':[0 for i in chars_index], '2':[0 for i in chars_index], 
+                            '3':[0 for i in chars_index]}, 
+                           index=chars_index)
+    
+    for col in JV.columns.to_list():
+        power = JV[col]*JV.index
+        
+        Vi_l1 = JV.index[JV.index < 0][-2]
+        Vf_l1 = JV.index[JV.index < JV.index[power.argmin()]][-4]
+        lin1_fit, params = opt.curve_fit(y,
+                                         JV[Vi_l1:Vf_l1].index,
+                                         JV[col][Vi_l1:Vf_l1].values)
+        JSC = -lin1_fit[1]
+        RSH = 1/lin1_fit[0]*10**3
+        
+        Vi_l2 = JV.index[JV.index > JV.index[power.argmin()]][4]
+        Vf_l2 = JV[col][JV[col]>0].index[2]
+        lin2_fit, params = opt.curve_fit(y,
+                                         JV[Vi_l2:Vf_l2].index,
+                                         JV[col][Vi_l2:Vf_l2].values)
+        VOC = -lin2_fit[1]/lin2_fit[0]
+        RS = 1/lin2_fit[0]*10**3
+        
+        VMPP = JV.index[power.argmin()]
+        JMPP = -JV[col][VMPP]
+        
+        FF = VMPP*JMPP/(VOC*JSC)*100
+        PCE = FF*VOC*JSC/100
+        
+        chars_2[col] = [PCE,JSC,VOC,FF,RSH,RS]
 
-for col in JV.columns.to_list():
-    power = JV[col]*JV.index
+    return chars_2
     
-    Vi_l1 = JV.index[JV.index < 0][-2]
-    Vf_l1 = JV.index[JV.index < JV.index[power.argmin()]][-4]
-    lin1_fit, params = opt.curve_fit(y,
-                            JV[Vi_l1:Vf_l1].index,
-                            JV[col][Vi_l1:Vf_l1].values)
-    JSC = -lin1_fit[1]
-    RSH = 1/lin1_fit[0]*10**3
-    
-    Vi_l2 = JV.index[JV.index > JV.index[power.argmin()]][4]
-    Vf_l2 = JV[col][JV[col]>0].index[2]
-    lin2_fit, params = opt.curve_fit(y,
-                            JV[Vi_l2:Vf_l2].index,
-                            JV[col][Vi_l2:Vf_l2].values)
-    VOC = -lin2_fit[1]/lin2_fit[0]
-    RS = 1/lin2_fit[0]*10**3
-    
-    VMPP = JV.index[power.argmin()]
-    JMPP = -JV[col][VMPP]
-    
-    FF = VMPP*JMPP/(VOC*JSC)*100
-    PCE = FF*VOC*JSC/100
-    
-    chars_2[col] = [PCE,JSC,VOC,FF,RSH,RS]
-    
-dfi.export(chars_2, 'chars_linear.png')
+dfi.export(lin_est(JV), 'chars_linear.png')
 
-char_ratio_2 = pd.DataFrame(chars_2.values/compare_DF.values, 
+char_ratio_2 = pd.DataFrame(lin_est(JV).values/compare_DF.values, 
                          index=['PCE','Jsc','Voc','FF','Rsh','Rs'],
                          columns=['Pixel 1', 'Pixel 2', 'Piexl 3'])
 
